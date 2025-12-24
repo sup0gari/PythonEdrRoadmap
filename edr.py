@@ -32,6 +32,7 @@ def get_modifying_process(file):
             continue
     return None
 
+# WindowsEventLogの検索
 def get_event_log(file):
     server = 'localhost'
     log_type = 'Security'
@@ -62,22 +63,19 @@ while True:
     if current_mtime != last_mtime:
         if current_hash != last_hash:
             print(f"[!!] CRITICAL: File content modified!")
-            proc_info = get_modifying_process(TARGET_FILE) # psutilのリアルタイムスキャン
-            
-            # psutil失敗用
-            if not proc_info:
-                print("    [*] Real-time scan failed. Cheking Windows Event Logs...")
-                proc_info = get_event_log(TARGET_FILE)
-            
+            # proc_info = get_modifying_process(TARGET_FILE)
+            # if not proc_info:
+            print("    [*] Cheking Windows Event Logs...")
+            proc_info = get_event_log(TARGET_FILE)
             if proc_info:
-                process_name = proc_info.get('name') or proc_info.get('process_name')
-                pid = proc_info.get('pid') or proc_info.get('pid')
-                user = proc_info.get('username') or proc_info.get('user')
+                process_name = proc_info.get('process_name')
+                pid = proc_info.get('pid')
+                user = proc_info.get('user')
 
                 print(f"    Process: {process_name} (PID: {pid})")
                 print(f"    User: {user}")
             else:
-                print("    [?] Evidence not found in Event Logs yet. (Wait for OS to write log)")
+                print("    [?] Evidence not found. (The log might be delayed or not configured)")
             print(f"    New Hash: {current_hash}")
             
             last_hash = current_hash
