@@ -1,7 +1,6 @@
 import os
 import time
 import hashlib
-# import psutil
 import win32evtlog
 import json
 
@@ -39,20 +38,6 @@ def normalize_format(inserts, source="WINDOWS"):
         "file": inserts[6],
         "source": source
     }
-
-# ファイル編集プロセス取得
-# def get_modifying_process(file):
-#     target_abs_path = os.path.abspath(file)
-#     # カーネルに実行中のプロセス情報をリクエスト
-#     for proc in psutil.process_iter(['pid', 'name', 'username']):
-#         try:
-#             # ファイルを開いているプロセスリストを検索
-#             for f in proc.open_files():
-#                 if f.path == target_abs_path:
-#                     return proc.info
-#         except(psutil.AccessDenied, psutil.NoSuchProcess):
-#             continue
-#     return None
 
 # WindowsEventLogの検索
 def get_event_log(file, action="WRITE"):
