@@ -14,9 +14,12 @@ RETRY_DELAY = config["log_retry_delay"]
 
 # ファイルのハッシュ値取得
 def calc_hash(filepath):
+    sha256hash = hashlib.sha256()
     with open(filepath, "rb") as f:
-        content = f.read()
-        return hashlib.sha256(content).hexdigest()
+        # 4096バイトずつ読み込み、メモリクラッシュを防ぐ
+        for byte in iter(lambda: f.read(4096), b""):
+            sha256hash.update(byte)
+    return sha256hash.hexdigest()
 
 # ファイル編集時間取得
 def get_mtime(filepath):
