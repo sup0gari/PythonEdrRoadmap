@@ -23,6 +23,7 @@ def normalize_format(data, source="WINDOWS"):
     except:
         pid = data[10]
     return {
+        "handle": data[7],
         "process": data[11],
         "user": data[1],
         "pid": pid,
@@ -30,7 +31,7 @@ def normalize_format(data, source="WINDOWS"):
         "source": source
     }
 
-def get_event_log(file, action="WRITE"):
+def get_event_log(file, action="WRITE", seen_handles = None):
     server = 'localhost'
     log_type = 'Security'
     handle = win32evtlog.OpenEventLog(server, log_type)
@@ -47,16 +48,24 @@ def get_event_log(file, action="WRITE"):
     for event in all_events:
         if event.EventID != 4663: continue
         inserts = event.StringInserts
+        handle_id = inserts[7]
+        if seen_handles is not None and handle_id in seen_handles: continue
         if "python.exe" in inserts[11].lower(): continue
         
         is_target = os.path.basename(file).lower() in inserts[6].lower()
         is_deleted_now = inserts[7] in delete_handle_ids
         delete_access = (inserts[9] == "0x10000")
 
+        is_matched = False
         if action == "DELETE":
             if is_deleted_now or (is_target and delete_access):
-                return normalize_format(inserts)
+                is_matched = True
         elif action == "WRITE":
             if is_target and not delete_access:
-                return normalize_format(inserts)
+                is_matched = True
+        
+        if is_matched:
+            if seen_handles is not None:
+                seen_handles.append(handle_id)
+            return normalize_format(inserts)
     return None

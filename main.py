@@ -2,6 +2,7 @@ import os
 import time
 import json
 from utils import calc_hash, get_mtime, get_event_log, normalize_format
+from collections import deque
 
 with open("config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
@@ -10,19 +11,20 @@ TARGET_FILES = config["target_files"]
 RETRY_COUNT = config["log_retry_count"]
 RETRY_DELAY = config["log_retry_delay"] 
 
-def check_info(file, action, msg):
+def check_info(file, action, msg, seen_handles):
     print(msg)
     abs_path = os.path.abspath(file)
     proc_info = None
 
     for attempt in range(RETRY_COUNT):
         print(f"    [*] Checking Logs...(Attempt {attempt + 1})")
-        proc_info = get_event_log(abs_path, action=action)
+        proc_info = get_event_log(abs_path, action, seen_handles)
         if proc_info: break
         time.sleep(RETRY_DELAY)
     
     if proc_info:
         print(f"    Log Found!")
+        print(f"    Handle : {proc_info['handle']}")
         print(f"    Process: {proc_info['process']} (PID: {proc_info['pid']})")
         print(f"    User   : {proc_info['user']}")
         print(f"    File   : {proc_info['file']}")
@@ -39,6 +41,7 @@ for f in TARGET_FILES:
         "hash": calc_hash(f) if exists else None
     }
 
+seen_handles = deque(maxlen=100)
 try:
     print(f"[*] Monitoring started for : {', '.join(TARGET_FILES)}")
     print("[*] Press Ctrl+C to stop.")
@@ -51,12 +54,12 @@ try:
 
             # 削除チェック
             if not exists_now and prev_status["exists"]:
-                check_info(f, "DELETE", f"[!] ALERT: {f} has been DELETED!")
+                check_info(f, "DELETE", f"[!] ALERT: {f} has been DELETED!", seen_handles)
                 file_status[f].update({"exists": False, "hash": None, "mtime": None})
             
             # 再作成チェック
             if exists_now and not prev_status["exists"]:
-                check_info(f, "WRITE", f"\n[*] INFO: {f} has been RECREATED.")
+                check_info(f, "WRITE", f"\n[*] INFO: {f} has been RECREATED.", seen_handles)
                 file_status[f].update({"exists": True, "hash": calc_hash(f), "mtime": get_mtime(f)})
                 
             # 編集チェック
@@ -65,7 +68,7 @@ try:
                 if current_mtime != prev_status["mtime"]:
                     current_hash = calc_hash(f)
                     if current_hash != prev_status["hash"]:
-                        check_info(f, "WRITE", f"\n[!!] CRITICAL: {f} content modified!")
+                        check_info(f, "WRITE", f"\n[!!] CRITICAL: {f} content modified!", seen_handles)
                         print(f"    New Hash: {current_hash}")
                         file_status[f].update({"hash": current_hash, "mtime": current_mtime})
                     else:
