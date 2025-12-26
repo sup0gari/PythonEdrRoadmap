@@ -47,9 +47,28 @@ def get_event_log(file, action="WRITE"):
 
     # Windowsイベントログを最新から読み取る
     flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
-    events = win32evtlog.ReadEventLog(handle, flags, 0)
+    # events = win32evtlog.ReadEventLog(handle, flags, 0)
 
-    for event in events:
+    all_events = []
+    for _ in range(5): # 5回分（数百件〜千件程度）読み込む
+        events = win32evtlog.ReadEventLog(handle, flags, 0)
+        if not events: break
+        all_events.extend(events)
+
+    if action == "DELETE":
+        delete_handle_ids = set()
+        for event in all_events:
+            if event.EventID == 4660:
+                delete_handle_ids.add(event.StringInserts[5])
+        
+        for event in all_events:
+            if event.EventID == 4663:
+                inserts = event.StringInserts
+                if inserts[7] in delete_handle_ids:
+                    if "python.exe" in inserts[11]: continue
+                    return normalize_format(inserts)
+
+    for event in all_events:
         # イベントID 4663（ファイル操作）で対象ファイルかどうか
         if event.EventID == 4663:
             inserts = event.StringInserts
