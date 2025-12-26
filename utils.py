@@ -1,6 +1,12 @@
 import os
 import hashlib
 import win32evtlog
+import json
+
+with open("config.json", "r", encoding="utf-8") as f:
+    config = json.load(f)
+
+RETRY_COUNT = config["log_retry_count"]
 
 def get_mtime(file):
     if os.path.exists(file):
@@ -34,41 +40,29 @@ def get_event_log(file, action="WRITE"):
     server = 'localhost'
     log_type = 'Security'
     handle = win32evtlog.OpenEventLog(server, log_type)
-
     flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
-    # events = win32evtlog.ReadEventLog(handle, flags, 0)
+
     all_events = []
-    for _ in range(5):
+    for _ in range(RETRY_COUNT):
         events = win32evtlog.ReadEventLog(handle, flags, 0)
         if not events: break
         all_events.extend(events)
 
-    if action == "DELETE":
-        delete_handle_ids = set()
-        for event in all_events:
-            if event.EventID == 4660:
-                delete_handle_ids.add(event.StringInserts[5])
-        
-        for event in all_events:
-            if event.EventID == 4663:
-                inserts = event.StringInserts
-                if inserts[7] in delete_handle_ids:
-                    if "python.exe" in inserts[11]: continue
-                    return normalize_format(inserts)
+    delete_handle_ids =  {event.StringInserts[5] for event in all_events if event.EventID == 4660}
 
     for event in all_events:
-        if event.EventID == 4663:
-            inserts = event.StringInserts
-            event_str = str(event.StringInserts)
+        if event.EventID != 4663: continue
+        inserts = event.StringInserts
+        if "python.exe" in inserts[11].lower(): continue
+        
+        is_target = os.path.basename(file).lower() in inserts[6].lower()
+        is_deleted_now = inserts[7] in delete_handle_ids
+        delete_access = (inserts[9] == "0x10000")
 
-            # Pythonによるハッシュ読み込みを除外
-            if "python.exe" in inserts[11]:
-                continue
-            if os.path.basename(file).lower() in str(inserts).lower():
-                access_mask = inserts[9]
-                is_delete = access_mask == "0x10000"
-                if action == "DELETE" and is_delete:
-                    return normalize_format(inserts)
-                elif action == "WRITE" and not is_delete:
-                    return normalize_format(inserts)           
+        if action == "DELETE":
+            if is_deleted_now or (is_target and delete_access):
+                return normalize_format(inserts)
+        elif action == "WRITE":
+            if is_target and not delete_access:
+                return normalize_format(inserts)
     return None
