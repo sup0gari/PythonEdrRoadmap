@@ -1,91 +1,14 @@
 import os
 import time
-import hashlib
-import win32evtlog
 import json
+from utils import calc_hash, get_mtime, get_event_log, normalize_format
 
 with open("config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
 TARGET_FILES = config["target_files"]
 RETRY_COUNT = config["log_retry_count"]
-RETRY_DELAY = config["log_retry_delay"]
-
-# ファイルのハッシュ値取得
-def calc_hash(filepath):
-    sha256hash = hashlib.sha256()
-    with open(filepath, "rb") as f:
-        # 4096バイトずつ読み込み、メモリクラッシュを防ぐ
-        for byte in iter(lambda: f.read(4096), b""):
-            sha256hash.update(byte)
-    return sha256hash.hexdigest()
-
-# ファイル編集時間取得
-def get_mtime(filepath):
-    if os.path.exists(filepath):
-        return os.path.getmtime(filepath)
-    return None
-
-def normalize_format(inserts, source="WINDOWS"):
-    try:
-        pid = int(inserts[10], 16)
-    except:
-        pid = inserts[10]
-    return {
-        "process_name": inserts[11],
-        "user": inserts[1],
-        "pid": pid,
-        "file": inserts[6],
-        "source": source
-    }
-
-# WindowsEventLogの検索
-def get_event_log(file, action="WRITE"):
-    server = 'localhost'
-    log_type = 'Security'
-    handle = win32evtlog.OpenEventLog(server, log_type)
-
-    # Windowsイベントログを最新から読み取る
-    flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
-    # events = win32evtlog.ReadEventLog(handle, flags, 0)
-
-    all_events = []
-    for _ in range(5): # 5回分（数百件〜千件程度）読み込む
-        events = win32evtlog.ReadEventLog(handle, flags, 0)
-        if not events: break
-        all_events.extend(events)
-
-    if action == "DELETE":
-        delete_handle_ids = set()
-        for event in all_events:
-            if event.EventID == 4660:
-                delete_handle_ids.add(event.StringInserts[5])
-        
-        for event in all_events:
-            if event.EventID == 4663:
-                inserts = event.StringInserts
-                if inserts[7] in delete_handle_ids:
-                    if "python.exe" in inserts[11]: continue
-                    return normalize_format(inserts)
-
-    for event in all_events:
-        # イベントID 4663（ファイル操作）で対象ファイルかどうか
-        if event.EventID == 4663:
-            inserts = event.StringInserts
-            event_str = str(event.StringInserts)
-
-            # Pythonによるハッシュ読み込みを除外
-            if "python.exe" in inserts[11]:
-                continue
-            if os.path.basename(file).lower() in str(inserts).lower():
-                access_mask = inserts[9]
-                is_delete = access_mask == "0x10000"
-                if action == "DELETE" and is_delete:
-                    return normalize_format(inserts)
-                elif action == "WRITE" and not is_delete:
-                    return normalize_format(inserts)
-                
-    return None
+RETRY_DELAY = config["log_retry_delay"] 
 
 file_status = {}
 for f in TARGET_FILES:
@@ -125,7 +48,7 @@ try:
                 
                 if proc_info:
                     print(f"    Evidence(DELETION) Found!")
-                    print(f"    Process: {proc_info['process_name']} (PID: {proc_info['pid']})")
+                    print(f"    Process: {proc_info['process']} (PID: {proc_info['pid']})")
                     print(f"    User: {proc_info['user']}")
                 else:
                     print("    [?] Deletion evidence not found in Security Log.")
@@ -137,7 +60,7 @@ try:
                 proc_info = get_event_log(target_abs_path, action="WRITE")
                 if proc_info:
                     print(f"    Info Found!")
-                    print(f"    Process: {proc_info['process_name']} (PID: {proc_info['pid']})")
+                    print(f"    Process: {proc_info['process']} (PID: {proc_info['pid']})")
                     print(f"    User   : {proc_info['user']}")
                     print(f"    File   : {proc_info['file']}")
                     file_status[f]["exists"] = True
@@ -162,7 +85,7 @@ try:
                             time.sleep(RETRY_DELAY)
 
                         if proc_info:
-                            print(f"    Process: {proc_info['process_name']} (PID: {proc_info['pid']})")
+                            print(f"    Process: {proc_info['process']} (PID: {proc_info['pid']})")
                             print(f"    User: {proc_info['user']}")
                             print(f"    File: {proc_info['file']}")
                         else:
