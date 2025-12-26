@@ -1,12 +1,6 @@
 import os
 import hashlib
 import win32evtlog
-import json
-
-with open("config.json", "r", encoding="utf-8") as f:
-    config = json.load(f)
-
-RETRY_COUNT = config["log_retry_count"]
 
 def get_mtime(file):
     if os.path.exists(file):
@@ -43,7 +37,7 @@ def get_event_log(file, action="WRITE"):
     flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
 
     all_events = []
-    for _ in range(RETRY_COUNT):
+    for _ in range(5):
         events = win32evtlog.ReadEventLog(handle, flags, 0)
         if not events: break
         all_events.extend(events)
